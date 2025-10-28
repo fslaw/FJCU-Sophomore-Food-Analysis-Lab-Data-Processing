@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+"""Main runner for titration analysis scripts.
+
+Usage examples:
+  python3 main.py                # runs tc03 (default)
+  python3 main.py --script tc02  # run tc02
+  python3 main.py --csv data.csv --no-annotate
+
+This script imports the chosen module (tc02 or tc03), loads the CSV,
+verifies standardizations, and runs the titration analysis/plot routine.
+"""
+
+import argparse
+import importlib
+import sys
+from pathlib import Path
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Run titration analysis (tc02 / tc03)')
+    parser.add_argument('--script', choices=['tc02', 'tc03'], default='tc03',
+                        help='Which analysis script to run (default: tc03)')
+    parser.add_argument('--csv', default='standardization_and_titratable_acidity2_en.csv',
+                        help='Path to the CSV file (default uses the repository example)')
+    parser.add_argument('--no-annotate', action='store_true', help='Disable point annotations')
+    args = parser.parse_args()
+
+    csv_path = Path(args.csv)
+    if not csv_path.exists():
+        print(f"Error: CSV file not found: {csv_path}")
+        sys.exit(2)
+
+    # Import the chosen module dynamically
+    try:
+        mod = importlib.import_module(args.script)
+    except Exception as e:
+        print(f"Error importing module '{args.script}': {e}")
+        sys.exit(3)
+
+    # Ensure module exposes expected functions
+    for fn in ('load_data', 'verify_calculations', 'analyze_titration_curve'):
+        if not hasattr(mod, fn):
+            print(f"Module '{args.script}' is missing required function: {fn}")
+            sys.exit(4)
+
+    # Optionally change module-level annotation setting
+    if args.no_annotate and hasattr(mod, 'ANNOTATE_POINTS'):
+        try:
+            mod.ANNOTATE_POINTS = False
+        except Exception:
+            pass
+
+    print(f"Running '{args.script}' with CSV: {csv_path}")
+
+    df_naoh, df_hcl, df_titration = mod.load_data(str(csv_path))
+    if df_naoh is None:
+        print("Failed to load data. Exiting.")
+        sys.exit(5)
+
+    N_naoh_mean = mod.verify_calculations(df_naoh, df_hcl)
+    mod.analyze_titration_curve(df_titration, N_naoh_mean)
+
+
+if __name__ == '__main__':
+    main()
