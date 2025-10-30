@@ -29,36 +29,34 @@ except Exception as e:
 def find_volume_at_ph(spline_func, target_ph, v_min, v_max, tolerance=1e-6):
     """
     使用二分法找到特定 pH 值對應的體積
-    
-    參數:
-    - spline_func: CubicSpline 函數
-    - target_ph: 目標 pH 值
-    - v_min, v_max: 搜尋範圍
-    - tolerance: 收斂容許誤差
-    
-    回傳:
-    - 對應目標 pH 的體積，如果找不到則回傳 None
     """
     def objective(v):
         return float(spline_func(v)) - target_ph
     
-    # 檢查邊界值
-    if objective(v_min) * objective(v_max) > 0:
+    # 檢查目標 pH 是否在搜尋範圍的 pH 內
+    ph_min = float(spline_func(v_min))
+    ph_max = float(spline_func(v_max))
+    
+    if (target_ph - ph_min) * (target_ph - ph_max) > 0:
+        # 如果 target_ph 同時大於或小於範圍兩端，代表不在範圍內
+        print(f"錯誤: 目標 pH {target_ph} 不在數據範圍 [{ph_min:.2f}, {ph_max:.2f}] 內。")
         return None
     
     # 二分法搜尋
-    while (v_max - v_min) > tolerance:
-        v_mid = (v_min + v_max) / 2
-        mid_value = objective(v_mid)
+    low_v, high_v = (v_min, v_max) if ph_min < ph_max else (v_max, v_min)
+    
+    while (high_v - low_v) > tolerance:
+        mid_v = (low_v + high_v) / 2
+        mid_ph = float(spline_func(mid_v))
         
-        if abs(mid_value) < tolerance:
-            return v_mid
-        elif mid_value * objective(v_min) < 0:
-            v_max = v_mid
+        if abs(mid_ph - target_ph) < tolerance:
+            return mid_v
+        elif mid_ph < target_ph:
+            low_v = mid_v
         else:
-            v_min = v_mid
+            high_v = mid_v
             
-    return (v_min + v_max) / 2
+    return (low_v + high_v) / 2
 
 # --- 3. 建立平滑函數 (Cubic Spline) ---
 spline = CubicSpline(v_data, ph_data)
@@ -91,7 +89,6 @@ print("表格數據準備完畢。")
 # ------------------------------------
 
 # --- 5. 計算一階與二階導數 ---
-# 使用位置參數呼叫 derivative()，以相容不同 scipy 版本的 PPoly/CubicSpline API
 spline_d1 = spline.derivative(1)
 spline_d2 = spline.derivative(2)
 
@@ -108,7 +105,7 @@ else:
 
 pKa_points_v = spline_d1.roots()
 print(f"找到 pKa (緩衝點) 候選 位於: {pKa_points_v} mL")
-print(f"找到轉折點 (當量點) 位於: {inflection_points_v} mL")
+print(f"找到轉折點 (二階導數=0) 位於: {inflection_points_v} mL")
 
 valid_inflection_points = []
 for v in inflection_points_v:
@@ -118,8 +115,6 @@ print(f"在數據範圍內的轉折點: {valid_inflection_points} mL")
 
 
 # --- 7. 繪製圖表 (複合圖) ---
-# 建立一個 Figure，包含上下兩個 subplots
-# height_ratios=[3, 1] 表示上面的圖 (ax1) 高度是下面表格 (ax2) 的 3 倍
 fig, (ax1, ax2) = plt.subplots(
     2, 1, 
     figsize=(12, 16), # 增加總高度以容納表格
@@ -129,40 +124,37 @@ fig, (ax1, ax2) = plt.subplots(
 # --- (A) 繪製上方的滴定曲線圖 (ax1) ---
 v_smooth = np.linspace(v_data.min(), v_data.max(), 500)
 
-# a) 繪製原始數據點
 ax1.plot(v_data, ph_data, 'ko', label='Original Data Points', markersize=8, zorder=10)
-# b) 繪製穿過所有點的平滑函數 (Spline)
 ax1.plot(v_smooth, spline(v_smooth), 'b-', label='Titration Curve (Cubic Spline)', linewidth=2)
-# c) 繪製一階導數
 ax1.plot(v_smooth, spline_d1(v_smooth), 'g--', label='1st Derivative (d(pH)/dV)')
-# d) 繪製二階導數
 ax1.plot(v_smooth, spline_d2(v_smooth), 'r:', label='2nd Derivative (d²(pH)/dV²)')
-# e) 標示二階導數 = 0 的線
 ax1.axhline(y=0, color='black', linestyle='-', linewidth=0.7)
 
 # f) 標示 pH 8.2 的位置
-v_ph82 = find_volume_at_ph(spline, 8.2, v_data.min(), v_data.max())
 if v_ph82 is not None:
-    ph_82 = float(spline(v_ph82))
+    ph_82 = float(spline(v_ph82)) # 幾乎會等於 8.2
     ax1.plot(v_ph82, ph_82, 'k^', markersize=15, zorder=11, 
              label=f'pH 8.2 Point\nV = {v_ph82:.3f} mL')
     ax1.axvline(x=v_ph82, color='k', linestyle='-.', linewidth=1)
 
-# g) 標示轉折點
+# g) 標示轉折點 (*** 已修改 ***)
 for v_ip in valid_inflection_points:
-    ph_ip = float(spline(v_ip))
+    ph_ip = float(spline(v_ip)) # 取得該點的 pH
     d1_ip = float(spline_d1(v_ip))
     
+    # 建立標籤，包含 pH (Y值)
+    label_text = f'V = {v_ip:.3f} mL, pH = {ph_ip:.2f}'
+    
     if d1_ip > 1.0: # 當量點
-        label = f'Equivalence Point (Inflection)\nV = {v_ip:.3f} mL'
+        label = f'Equivalence Point (Inflection)\n{label_text}'
         ax1.plot(v_ip, ph_ip, 'r*', markersize=20, zorder=11, label=label)
         ax1.axvline(x=v_ip, color='r', linestyle=':', linewidth=2)
     else: # pKa
-        label = f'pKa (Inflection)\nV = {v_ip:.3f} mL'
+        label = f'pKa (Inflection)\n{label_text}'
         ax1.plot(v_ip, ph_ip, 'mP', markersize=15, zorder=11, label=label)
         ax1.axvline(x=v_ip, color='m', linestyle=':', linewidth=2)
 
-# g) 圖表美化
+# h) 圖表美化
 ax1.set_title('pH Titration Curve of Apple Juice (Sample C)', fontsize=16)
 ax1.set_xlabel(f'Used volume (mL) of {N_naoh:.4f}N NaOH(aq)', fontsize=12)
 ax1.set_ylabel('pH value / Derivative value', fontsize=12)
@@ -199,6 +191,7 @@ def save_table_to_csv():
     df.to_csv(csv_filename, index=False)
     print(f"\n區間函數表格已儲存為 '{csv_filename}'")
 
+# --- 9. 主執行區 ---
 if __name__ == '__main__':
     # 檢查必要的檔案是否存在
     if not os.path.exists(CSV_FILE_NAME):
@@ -215,3 +208,4 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"執行過程中發生錯誤：{e}")
         exit(1)
+        
