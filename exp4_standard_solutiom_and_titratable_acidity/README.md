@@ -114,8 +114,7 @@ titration-analysis/
 - 注意實驗誤差的標示和計算
 
 ## 作者
-
-王天祐 (Wang Tian-You)
+T. Ong
 
 ## 授權
 
