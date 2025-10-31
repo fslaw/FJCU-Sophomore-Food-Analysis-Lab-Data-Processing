@@ -3,118 +3,43 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
-這個專案提供了一套完整的滴定曲線分析工具，特別適用於食品和飲料樣品的滴定酸度分析。專案包含標準滴定曲線分析和進階數值微分分析兩個主要模組。
+這個專案提供了一套完整的滴定曲線分析工具，特別適用於食品和飲料樣品的滴定酸度分析。專案包含標準滴定曲線分析（SOP）和兩種進階數值微分分析模組。
 
 ## 功能特點
 
 ### 1. 標準滴定曲線分析 (`titration_curve_en_v2.0.py`)
-- 自動化數據處理和分析流程
-- 精確計算滴定酸度
-- 生成專業的滴定曲線圖表
-- 提供詳細的實驗數據驗證
-- 自動標注關鍵數據點
+- **SOP 遵循**：嚴格依據實驗手冊，使用**線性內插法** (`numpy.interp`) 找出 **$pH 8.2$** (酚酞終點) 所對應的「法定終點」體積 (V = 9.343 mL)。
+- **結果計算**：自動計算滴定酸度 (TA = 0.2965 %) 與表觀 $pKa$ (4.87)。
+- **誤差模型**：包含基於誤差疊加原理的**固定絕對誤差線** (±0.068 mL)。
 
-### 2. 進階微分分析 (`cubic spline微分模型.py`)
-- 使用三次樣條插值進行曲線擬合
-- 計算一階和二階導數
-- 自動識別轉折點和 pKa 值
-- 精確定位 pH 8.2 的滴定體積
-- 輸出分段函數係數表格
+### 2. 進階微分分析 (Cubic Spline) (`cubic spline微分模型.py`)
+- **模型建立**：使用**三次樣條插值** (`scipy.interpolate.CubicSpline`) 對**原始數據** 建立平滑函數。
+- **問題展示**：計算一階和二階導數，展示因**過度擬合 (Overfitting)** 實驗雜訊 而產生的 **7+ 個「偽特徵」拐點**。
+- **模型匯出**：輸出構成曲線的 10 條分段函數係數至 `spline_piecewise_table.csv`。
+
+### 3. 進階微分分析 (Savitzky-Golay 濾波) (`濾波平滑微分.py`)
+- **訊號處理**：(推薦) 此腳本 首先使用 **Savitzky-Golay 濾波器** 對原始 $pH$ 數據 進行**平滑化 (Smoothing)**，以去除「短週期雜訊」。
+- **精確分析**：接著，對**平滑後的數據** 進行 Cubic Spline 與二階導數分析。
+- **真實特徵辨識**：成功濾除雜訊，精確辨識出**真實的化學特徵點**：
+    - **真實當量點** (d²=0, d' max): V = **8.502 mL** (at pH 7.02)
+    - **真實 pKa** (d²=0, d' min): V = **2.508 mL** (at pH 4.41)
+- **結果比較**：清楚地揭示了「法定終點」(9.34 mL) 與「化學當量點」(8.50 mL) 之間的顯著差異。
 
 ## 系統需求
 
 - Python 3.8+
-- 相依套件：
-  - numpy >= 1.25.2
-  - pandas >= 2.1.0
-  - matplotlib >= 3.7.2
-  - scipy >= 1.13.1
+- 相依套件 (詳見 `requirements.txt`)：
+  - numpy
+  - pandas
+  - matplotlib
+  - scipy
 
 ## 快速開始
 
 1. 複製專案：
 ```bash
-git clone https://github.com/yourusername/titration-analysis.git
-cd titration-analysis
-```
-
-2. 安裝相依套件：
-```bash
-pip install -r requirements.txt
-```
-
-3. 準備數據檔案：
-- 將實驗數據整理為指定格式的 CSV 檔案
-- 檔名：`standardization_and_titratable_acidity2_en.csv`
-- 將檔案放在專案根目錄
-
-4. 執行分析：
-```bash
-# 執行標準滴定曲線分析
-python titration_curve_en_v2.0.py
-
-# 執行進階微分分析
-python "cubic spline微分模型.py"
-```
-
-## 輸入檔案格式
-
-CSV 檔案應包含以下區塊：
-1. KHP 標定區塊（標頭從第 4 行開始）
-2. HCl 標定區塊（標頭從第 12 行開始）
-3. 滴定曲線數據（標頭從第 34 行開始）
-
-詳細格式請參考範例檔案。
-
-## 輸出檔案
-
-### 標準分析模式
-- `titration_curve_plot_with_points.png`：滴定曲線圖
-  - 包含誤差棒
-  - 標注終點和半當量點
-  - 顯示滴定酸度計算結果
-
-### 進階分析模式
-- `titration_curve_with_model_table.png`：進階分析圖
-  - 包含一階和二階導數曲線
-  - 標注轉折點和 pKa 值
-  - 顯示 pH 8.2 位置
-- `spline_piecewise_table.csv`：分段函數係數表
-
-## 分析結果說明
-
-### 1. 標準分析
-- 計算並驗證 NaOH 和 HCl 的標準化結果
-- 使用線性插值找到 pH 8.2 的滴定體積
-- 計算滴定酸度（以檸檬酸計）
-
-### 2. 進階分析
-- 使用三次樣條提供更精確的曲線擬合
-- 通過導數分析找到：
-  - 當量點（二階導數為零）
-  - pKa 值（一階導數極大值）
-  - pH 8.2 精確位置
-
-## 程式碼架構
-
-```
-titration-analysis/
-├── titration_curve_en_v2.0.py    # 標準分析主程式
-├── cubic spline微分模型.py        # 進階分析主程式
-├── requirements.txt              # 相依套件列表
-├── README.md                     # 說明文件
-└── example_data/                 # 範例數據
-    └── standardization_and_titratable_acidity2_en.csv
-```
-
-## 注意事項
-
-- 確保 CSV 檔案格式正確
-- 留意數據點的品質和完整性
-- 注意實驗誤差的標示和計算
-
-## 作者
-T. Ong
+git clone [https://github.com/yourusername/FJCU-Food-Science-Sophomore-Lab-Data.git](https://github.com/yourusername/FJCU-Food-Science-Sophomore-Lab-Data.git)
+cd FJCU-Food-Science-Sophomore-Lab-Data/Exp4_Standard_Solutions_and_Titratable_Acidity
 
 ## 授權
 
